@@ -155,7 +155,7 @@ function loop(now){update(now);draw(now);requestAnimationFrame(loop)}
 requestAnimationFrame(loop);
 
 /* 인트로 */
-const LINES=[['딸','아빠 우리 오늘도 굶는거야?'],['아빠','오늘은 아빠가 꼭 나무를 잘 패서 맛있는밥 사줄게']];
+const LINES=[['딸','아빠 우리 오늘도 굶는 거야?'],['아빠','오늘은 아빠가 꼭 나무를 잘 패서 맛있는 밥 사줄게']];
 function showLine(){
   $('who').textContent=LINES[lineNo][0];$('line').textContent='"'+LINES[lineNo][1]+'"';
   const last=lineNo===1;
@@ -184,7 +184,7 @@ function render(){
   $('pg').textContent=idx+' / 30';
 }
 function updateTimer(now){
-  const left=Math.max(0,limit-(now-startT)/1000);
+  const left=Math.min(limit,Math.max(0,limit-(now-startT)/1000));
   $('fill').style.width=(left/limit*100)+'%';$('tt').textContent=left.toFixed(1)+'초';
   if(left<=0)finish(false);
 }
@@ -195,7 +195,7 @@ function press(k){
     for(let i=0;i<4;i++)parts.push({x:198,y:132,vx:Math.random()*3-.5,vy:-Math.random()*3-1,l:25});
     if(idx>=30){render();finish(true)}else render();
   }else{
-    shakeT=performance.now();const c=$('grid').children[idx];c.classList.add('bad');
+    shakeT=performance.now();startT-=1000;const c=$('grid').children[idx];c.classList.add('bad');
   }
 }
 function finish(ok){
@@ -209,6 +209,11 @@ function finish(ok){
 const KM={ArrowLeft:0,ArrowUp:1,ArrowRight:2,ArrowDown:3};
 addEventListener('keydown',e=>{if(e.key in KM){e.preventDefault();if(!e.repeat)press(KM[e.key])}});
 document.querySelectorAll('.pad button').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();press(+b.dataset.k)}));
+let hiddenAt=0;
+document.addEventListener('visibilitychange',()=>{ // 탭을 벗어난 시간은 타이머에서 제외
+  if(document.hidden)hiddenAt=performance.now();
+  else if(hiddenAt){startT+=performance.now()-hiddenAt;hiddenAt=0}
+});
 showLine();
 </script>
 </body>
