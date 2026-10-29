@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>나무꾼 아빠</title>
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+<style>
+:root{--page:#f1efe6;--ink:#111;--paper:#e6e1cf;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--page:#26241f}}
+:root[data-theme="dark"]{--page:#26241f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);font-family:'DotGothic16','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:var(--ink);display:flex;justify-content:center;padding:12px}
+.wrap{width:100%;max-width:640px}
+canvas{width:100%;display:block;image-rendering:pixelated;background:var(--paper);border:4px solid var(--ink)}
+.box{background:var(--paper);border:4px solid var(--ink);margin-top:8px;padding:12px;min-height:90px;font-size:18px;line-height:1.5}
+.who{font-weight:bold;border-bottom:2px solid var(--ink);display:inline-block;margin-bottom:4px}
+button{font-family:inherit;font-size:18px;background:var(--ink);color:var(--paper);border:0;padding:8px 16px;cursor:pointer;box-shadow:4px 4px 0 #8a8672}
+button:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #8a8672}
+.lv{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.lv button{padding:6px 10px;font-size:15px;background:var(--paper);color:var(--ink);border:3px solid var(--ink);box-shadow:none}
+.lv button.on{background:var(--ink);color:var(--paper)}
+.hide{display:none}
+#bar{height:14px;border:3px solid var(--ink);background:var(--paper)}
+#fill{height:100%;background:var(--ink);width:100%}
+#grid{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-top:8px}
+.c{border:2px solid var(--ink);text-align:center;font-size:20px;font-weight:bold;padding:2px 0;background:var(--paper)}
+.c.done{background:var(--ink);color:var(--paper);opacity:.35}
+.c.cur{background:var(--ink);color:var(--paper);transform:scale(1.15)}
+.c.bad{background:#999}
+.pad{display:grid;grid-template-columns:repeat(3,64px);gap:6px;justify-content:center;margin-top:10px}
+.pad button{padding:10px 0;font-size:22px}
+.info{display:flex;justify-content:space-between;margin-bottom:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<canvas id="cv" width="320" height="180"></canvas>
+
+<div id="intro" class="box">
+  <div class="who" id="who"></div>
+  <div id="line"></div>
+  <div id="lvwrap" class="hide">
+    <div class="lv" id="lv"></div>
+  </div>
+  <div style="margin-top:8px"><button id="next">다음 ▶</button></div>
+</div>
+
+<div id="play" class="box hide">
+  <div class="info"><span id="lvt"></span><span id="tt"></span><span id="pg"></span></div>
+  <div id="bar"><div id="fill"></div></div>
+  <div id="grid"></div>
+  <div class="pad">
+    <span></span><button data-k="1">↑</button><span></span>
+    <button data-k="0">←</button><button data-k="3">↓</button><button data-k="2">→</button>
+  </div>
+</div>
+
+<div id="end" class="box hide">
+  <div class="who" id="endwho"></div>
+  <div id="endtxt"></div>
+  <div style="margin-top:8px"><button id="again">다시 하기</button></div>
+</div>
+</div>
+
+<script>
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const K='#111',BG='#e6e1cf';
+const $=id=>document.getElementById(id);
+const TIMES=[30,25,20,15,10,7], ARR=['←','↑','→','↓'];
+let scene='intro', level=1, seq=[], idx=0, startT=0, limit=30, swingT=-999, shakeT=-999, parts=[], lineNo=0;
+
+function R(x,y,w,h,c){ctx.fillStyle=c||K;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
+function face(x,y,mood,dad){
+  const ex=dad?[x+6,x+10]:[x+5,x+8];
+  R(ex[0],y+3,1,2,BG);R(ex[1],y+3,1,2,BG);
+  const m=dad?x+6:x+5;
+  if(mood==='happy'){R(m,y+6,5,1,BG);R(m-1,y+5,1,1,BG);R(m+5,y+5,1,1,BG)}
+  else if(mood==='sad'){R(m+1,y+5,3,1,BG);R(m,y+6,1,1,BG);R(m+4,y+6,1,1,BG)}
+  else R(m+1,y+6,3,1,BG);
+}
+function man(x,y,f,mood){ // 아빠 (31px)
+  R(x+2,y-2,12,3);R(x+3,y,10,9);face(x,y,mood,true);
+  R(x+4,y+10,8,13);R(x+4,y+23,3,8);R(x+9,y+23,3,8);R(x+1,y+11,3,9);
+  if(f===null){R(x+12,y+11,3,9);return}
+  if(f===0){ // 도끼 들어올림
+    for(let i=0;i<14;i++)R(x+12+i*.5,y+11-i,2,2);R(x+17,y-8,8,6)
+  }else{ // 내려찍음
+    for(let i=0;i<14;i++)R(x+12+i,y+11+i*.7,2,2);R(x+24,y+18,6,10)
+  }
+}
+function girl(x,y,mood){ // 딸 (22px)
+  R(x+3,y,8,7);R(x+1,y+1,2,4);R(x+11,y+1,2,4);face(x,y,mood,false);
+  for(let i=0;i<11;i++)R(x+7-((8+i)>>1),y+7+i,8+i,1);
+  R(x+4,y+18,2,4);R(x+8,y+18,2,4);
+}
+function pine(x,y){for(let i=0;i<4;i++)R(x-(4+4*i),y+i*7,8+8*i,7);R(x-2,y+28,4,8)}
+function ground(){R(0,150,320,2);for(let i=0;i<320;i+=16)R(i+((i*7)%9),156+(i%3)*6,6,1)}
+function cabin(t){
+  for(let i=0;i<30;i++){const w=i*5+4;R(160-w/2,30+i,w,1)}
+  R(95,60,130,90);R(98,63,124,84,BG);
+  for(let y=75;y<147;y+=15)R(98,y,124,1);
+  R(150,105,24,45);R(152,107,20,43,BG);R(168,128,2,2);
+  R(110,85,22,18);R(112,87,18,14,BG);R(120,87,2,14);R(112,93,18,2);
+  R(195,35,10,25);
+  for(let i=0;i<4;i++){const p=((t/40+i*12)%48);R(198+Math.sin(p/6+i)*4,34-p,4,4)}
+}
+function table(food,t){
+  R(100,125,120,4);R(105,129,4,21);R(211,129,4,21);
+  [[125,0],[175,1]].forEach(([bx,k])=>{
+    R(bx,118,20,7);R(bx+2,125,16,2);
+    if(food){R(bx+2,116,16,3,BG);R(bx+4,114,12,3);
+      for(let i=0;i<3;i++){const p=((t/50+i*9+k*5)%24);R(bx+4+i*5+Math.sin(p/3)*2,112-p,2,3)}}
+    else R(bx+2,119,16,4,BG);
+  });
+}
+function draw(now){
+  ctx.save();
+  if(now-shakeT<150)ctx.translate((Math.random()-.5)*4,0);
+  ctx.fillStyle=BG;ctx.fillRect(0,0,320,180);
+  if(scene==='intro'){
+    pine(30,114);pine(290,114);cabin(now);ground();
+    const bob=Math.floor(now/400)%2;
+    girl(100,128-(lineNo===0?bob*2:0),'norm');
+    man(240,119-(lineNo===1?bob*2:0),null,lineNo===1?'happy':'norm');
+  }else if(scene==='play'){
+    pine(25,114);pine(60,118);pine(295,114);ground();
+    const f=(now-swingT<110)?1:0;
+    man(162,119,f,'norm');
+    R(198,132,24,18);R(202,136,16,2,BG);R(202,142,16,2,BG);R(198,130,24,3);
+    girl(108,128,'norm');
+    const n=Math.min(10,Math.floor(idx/3));
+    for(let k=0;k<n;k++){const bx=245+(k%5)*10,by=143-Math.floor(k/5)*8;R(bx,by,9,7);R(bx+3,by+2,3,3,BG)}
+    parts=parts.filter(p=>p.l>0);
+    parts.forEach(p=>{R(p.x,p.y,3,3);p.x+=p.vx;p.y+=p.vy;p.vy+=.25;p.l--});
+    updateTimer(now);
+  }else if(scene==='win'){
+    pine(25,114);pine(295,114);ground();table(true,now);
+    man(65,119,null,'happy');girl(245,128,'happy');
+  }else if(scene==='lose'){
+    pine(25,114);pine(295,114);ground();table(false,now);
+    man(65,122,null,'sad');girl(245,131,'sad');
+    ctx.fillStyle=K;ctx.font='bold 14px DotGothic16, sans-serif';
+    ctx.fillText('꼬르륵...',130+Math.sin(now/120)*3,100);
+  }
+  ctx.restore();
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+/* 인트로 */
+const LINES=[['딸','아빠 우리 오늘도 굶는거야?'],['아빠','오늘은 아빠가 꼭 나무를 잘 패서 맛있는밥 사줄게']];
+function showLine(){
+  $('who').textContent=LINES[lineNo][0];$('line').textContent='"'+LINES[lineNo][1]+'"';
+  const last=lineNo===1;
+  $('lvwrap').classList.toggle('hide',!last);
+  $('next').textContent=last?'게임 스타트':'다음 ▶';
+}
+(function(){const lv=$('lv');
+  for(let i=1;i<=6;i++){const b=document.createElement('button');b.textContent='난이도 '+i+' · '+TIMES[i-1]+'초';
+    b.onclick=()=>{level=i;[...lv.children].forEach((c,j)=>c.classList.toggle('on',j===i-1))};
+    if(i===1)b.classList.add('on');lv.appendChild(b)}})();
+$('next').onclick=()=>{ if(lineNo===0){lineNo=1;showLine()} else startGame() };
+$('again').onclick=()=>{scene='intro';lineNo=1;showLine();$('end').classList.add('hide');$('intro').classList.remove('hide')};
+
+/* 게임 */
+function startGame(){
+  seq=Array.from({length:30},()=>Math.floor(Math.random()*4));idx=0;parts=[];
+  limit=TIMES[level-1];startT=performance.now();scene='play';
+  $('intro').classList.add('hide');$('end').classList.add('hide');$('play').classList.remove('hide');
+  $('lvt').textContent='난이도 '+level;
+  const g=$('grid');g.innerHTML='';
+  seq.forEach(k=>{const d=document.createElement('div');d.className='c';d.textContent=ARR[k];g.appendChild(d)});
+  render();
+}
+function render(){
+  [...$('grid').children].forEach((c,i)=>{c.classList.remove('cur','bad');c.classList.toggle('done',i<idx);if(i===idx)c.classList.add('cur')});
+  $('pg').textContent=idx+' / 30';
+}
+function updateTimer(now){
+  const left=Math.max(0,limit-(now-startT)/1000);
+  $('fill').style.width=(left/limit*100)+'%';$('tt').textContent=left.toFixed(1)+'초';
+  if(left<=0)finish(false);
+}
+function press(k){
+  if(scene!=='play')return;
+  if(k===seq[idx]){
+    idx++;swingT=performance.now();
+    for(let i=0;i<4;i++)parts.push({x:198,y:132,vx:Math.random()*3-.5,vy:-Math.random()*3-1,l:25});
+    if(idx>=30){render();finish(true)}else render();
+  }else{
+    shakeT=performance.now();const c=$('grid').children[idx];c.classList.add('bad');
+  }
+}
+function finish(ok){
+  if(scene!=='play')return;
+  scene=ok?'win':'lose';
+  $('play').classList.add('hide');$('end').classList.remove('hide');
+  $('endwho').textContent=ok?'딸':'딸';
+  $('endtxt').textContent=ok?'"와! 아빠 최고! 같이 맛있게 먹자!" 🍚 두 사람은 따뜻한 밥을 맛있게 먹었습니다.'
+    :'"아빠... 괜찮아. 내일은 꼭 할 수 있을 거야." 시간이 부족했다... 오늘도 두 사람은 굶었습니다.';
+}
+const KM={ArrowLeft:0,ArrowUp:1,ArrowRight:2,ArrowDown:3};
+addEventListener('keydown',e=>{if(e.key in KM){e.preventDefault();if(!e.repeat)press(KM[e.key])}});
+document.querySelectorAll('.pad button').forEach(b=>b.onclick=()=>press(+b.dataset.k));
+showLine();
+</script>
+</body>
+</html>
