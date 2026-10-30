@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-<title>나무꾼 아빠</title>
+<title>나무꾼 남편</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
 <style>
@@ -13,9 +13,9 @@
 *{box-sizing:border-box}
 html,body{overscroll-behavior:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--page);font-family:'DotGothic16','Malgun Gothic','Apple SD Gothic Neo',sans-serif;color:var(--ink);display:flex;justify-content:center;padding:12px}
-.wrap{width:100%;max-width:640px}
-canvas{width:100%;display:block;image-rendering:pixelated;background:var(--paper);border:4px solid var(--ink)}
-.box{background:var(--paper);border:4px solid var(--ink);margin-top:8px;padding:12px;min-height:90px;font-size:18px;line-height:1.5}
+.wrap{width:100%;max-width:480px}
+canvas{width:100%;display:block;background:var(--paper);border:4px solid var(--ink)}
+.box{background:var(--paper);border:4px solid var(--ink);margin-top:8px;padding:8px 12px;min-height:70px;font-size:18px;line-height:1.5}
 .who{font-weight:bold;border-bottom:2px solid var(--ink);display:inline-block;margin-bottom:4px}
 button{touch-action:manipulation;font-family:inherit;font-size:18px;background:var(--ink);color:var(--paper);border:0;padding:8px 16px;cursor:pointer;box-shadow:4px 4px 0 #8a8672}
 button:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #8a8672}
@@ -28,16 +28,24 @@ button:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #8a8672}
 #grid{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;margin-top:8px}
 .c{border:2px solid var(--ink);text-align:center;font-size:20px;font-weight:bold;padding:2px 0;background:var(--paper)}
 .c.done{background:var(--ink);color:var(--paper);opacity:.35}
-.c.cur{background:var(--ink);color:var(--paper);transform:scale(1.15)}
-.c.bad{background:#999}
-.pad{display:grid;grid-template-columns:repeat(3,64px);gap:6px;justify-content:center;margin-top:10px}
+.c.cur{background:#ffd400;color:var(--ink);transform:scale(1.15);animation:pulse .5s ease-in-out infinite alternate}
+.c.cur.bad{border-color:#d22;animation:badflash .3s,pulse .5s ease-in-out infinite alternate}
+@keyframes pulse{from{transform:scale(1.1)}to{transform:scale(1.24)}}
+@keyframes badflash{0%{background:#f33}100%{background:#ffd400}}
+#bar.low #fill{background:#d22;animation:blink .35s steps(2) infinite}
+@keyframes blink{50%{opacity:.35}}
+#tt.low{color:#d22;font-weight:bold}
+.wrap{position:relative}
+.mute{position:absolute;top:8px;right:8px;padding:2px 6px;font-size:14px;background:var(--paper);color:var(--ink);border:2px solid var(--ink);box-shadow:none}
+.pad{display:grid;grid-template-columns:repeat(2,96px);gap:6px;justify-content:center;margin-top:10px}
 .pad button{padding:10px 0;font-size:22px}
 .info{display:flex;justify-content:space-between;margin-bottom:4px}
 </style>
 </head>
 <body>
 <div class="wrap">
-<canvas id="cv" width="320" height="180"></canvas>
+<canvas id="cv" width="960" height="420"></canvas>
+<button class="mute" id="mute" title="소리 켜기/끄기">🔊</button>
 
 <div id="intro" class="box">
   <div class="who" id="who"></div>
@@ -53,8 +61,7 @@ button:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #8a8672}
   <div id="bar"><div id="fill"></div></div>
   <div id="grid"></div>
   <div class="pad">
-    <span></span><button data-k="1">↑</button><span></span>
-    <button data-k="0">←</button><button data-k="3">↓</button><button data-k="2">→</button>
+    <button data-k="0">←</button><button data-k="1">→</button>
   </div>
 </div>
 
@@ -67,35 +74,70 @@ button:active{transform:translate(2px,2px);box-shadow:2px 2px 0 #8a8672}
 
 <script>
 const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+const S=3; // 캔버스 해상도 배율(논리 좌표는 320x140 그대로)
 const K='#111',BG='#e6e1cf';
 const $=id=>document.getElementById(id);
-const TIMES=[30,25,20,15,10,7], ARR=['←','↑','→','↓'];
-let scene='intro', level=1, seq=[], idx=0, startT=0, limit=30, swingT=-999, shakeT=-999, parts=[], lineNo=0;
+const TIMES=[30,25,20,15,10,7], ARR=['←','→'];
+let scene='intro', level=1, seq=[], idx=0, startT=0, limit=30, lineNo=0, leftNow=99;
+// 연출 상태 (시각은 모두 performance.now() 기준)
+let swingT=-999, wrongT=-999, hitStopUntil=0, hsDur=50, slowUntil=0, lastU=0;
+let shakeT=-999, shakeAmp=0, shakeDur=150, punchT=-999, punchAmp=0, flashT=-999, hopT=-999;
+let combo=0, maxCombo=0, bumpT=-999, ending=false, finalAt=0, stumpGone=false;
+let parts=[], rings=[], pops=[], pend=[];
+let wifeJumpT=-999, wifeFlinchT=-999, lastSweat=0, lastHeart=0;
+const IMPACT={x:146,y:132}, MAXP=60;
 
 function R(x,y,w,h,c){ctx.fillStyle=c||K;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
-function face(x,y,mood,dad){
-  const ex=dad?[x+6,x+10]:[x+5,x+8];
-  R(ex[0],y+3,1,2,BG);R(ex[1],y+3,1,2,BG);
-  const m=dad?x+6:x+5;
-  if(mood==='happy'){R(m,y+6,5,1,BG);R(m-1,y+5,1,1,BG);R(m+5,y+5,1,1,BG)}
-  else if(mood==='sad'){R(m+1,y+5,3,1,BG);R(m,y+6,1,1,BG);R(m+4,y+6,1,1,BG)}
-  else R(m+1,y+6,3,1,BG);
+const IMG={};
+['wife','before-cut','after-cut'].forEach(n=>{const i=new Image();i.src='assets/'+n+'.png';IMG[n]=i});
+// img를 높이 h로 그림. cx: 몸 중심 x, feet: 발 y, ax: 몸 중심의 가로 비율, fy: 발의 세로 비율
+const CACHE={};
+function scaled(n,W,H){ // 큰 원본을 절반씩 줄여 가며 목표 크기로 축소(계단 현상 방지)
+  const k=n+W+'x'+H;if(CACHE[k])return CACHE[k];
+  let src=IMG[n],w=src.naturalWidth,h=src.naturalHeight;
+  while(w/2>=W&&h/2>=H){
+    const c=document.createElement('canvas');c.width=w>>1;c.height=h>>1;
+    const g=c.getContext('2d');g.imageSmoothingQuality='high';g.drawImage(src,0,0,c.width,c.height);
+    src=c;w=c.width;h=c.height;
+  }
+  const c=document.createElement('canvas');c.width=W;c.height=H;
+  const g=c.getContext('2d');g.imageSmoothingQuality='high';g.drawImage(src,0,0,W,H);
+  return CACHE[k]=c;
 }
-function man(x,y,f,mood){ // 아빠 (31px)
-  R(x+2,y-2,12,3);R(x+3,y,10,9);face(x,y,mood,true);
-  R(x+4,y+10,8,13);R(x+4,y+23,3,8);R(x+9,y+23,3,8);R(x+1,y+11,3,9);
-  if(f===null){R(x+12,y+11,3,9);return}
-  if(f===0){ // 도끼 들어올림
-    for(let i=0;i<14;i++)R(x+12+i*.5,y+11-i,2,2);R(x+17,y-8,8,6)
-  }else{ // 내려찍음
-    for(let i=0;i<14;i++)R(x+12+i,y+11+i*.7,2,2);R(x+24,y+18,6,10)
+function tinted(c,k){ // 스프라이트 윤곽 안쪽만 반투명 빨강으로 덮은 사본
+  if(CACHE[k])return CACHE[k];
+  const t=document.createElement('canvas');t.width=c.width;t.height=c.height;
+  const g=t.getContext('2d');g.drawImage(c,0,0);
+  g.globalCompositeOperation='source-atop';g.fillStyle='rgba(255,0,0,.45)';g.fillRect(0,0,t.width,t.height);
+  return CACHE[k]=t;
+}
+function sprite(n,cx,feet,h,ax,fy,o){
+  o=o||{};
+  const i=IMG[n];if(!i.complete||!i.naturalWidth)return;
+  const w=h*i.naturalWidth/i.naturalHeight;
+  const W=Math.round(w*S),H=Math.round(h*S);let c=scaled(n,W,H);
+  if(o.red)c=tinted(c,n+W+'x'+H+'red');
+  ctx.save();ctx.translate(cx,feet);
+  if(o.rot)ctx.rotate(o.rot);
+  ctx.scale(o.sx||1,o.sy||1);
+  if(o.alpha!=null)ctx.globalAlpha=o.alpha;
+  ctx.drawImage(c,-w*ax,-h*fy,w,h);
+  ctx.restore();
+}
+function man(cx,feet,now,play){ // 남편: 준비자세(before-cut) / 내려찍은 자세(after-cut)
+  const red=now-wrongT<400; // 틀린 직후 잠깐 반투명 빨강
+  const d=now-swingT;
+  if(play&&d>=0&&d<300){
+    const de=d<hsDur?0:d-hsDur; // 히트스톱 동안은 충돌 순간 자세로 정지
+    const k=Math.max(0,1-de/220), dec=Math.max(0,1-de/260);
+    if(de<120)[[10,.3],[20,.15]].forEach(([gx,al])=>sprite('before-cut',cx+gx,feet,115,.41,.99,{rot:.09,alpha:al})); // 잔상
+    const lunge=-4*Math.sin(Math.PI*Math.min(1,de/260)); // 앞으로 돌진
+    sprite('after-cut',cx+lunge,feet,86,.65,.865,{red,sx:1+.1*k,sy:1-.1*k,rot:-.14*dec*dec}); // 스쿼시 + 앞으로 기울기
+  }else{
+    sprite('before-cut',cx,feet,115,.41,.99,{red,rot:play?.09:0,sy:1+.02*Math.sin(now/160)}); // 뒤로 젖힘 + 숨쉬기
   }
 }
-function girl(x,y,mood){ // 딸 (22px)
-  R(x+3,y,8,7);R(x+1,y+1,2,4);R(x+11,y+1,2,4);face(x,y,mood,false);
-  for(let i=0;i<11;i++)R(x+7-((8+i)>>1),y+7+i,8+i,1);
-  R(x+4,y+18,2,4);R(x+8,y+18,2,4);
-}
+function wife(cx,feet,o){sprite('wife',cx,feet,71,.5,.995,o)}
 function pine(x,y){for(let i=0;i<4;i++)R(x-(4+4*i),y+i*7,8+8*i,7);R(x-2,y+28,4,8)}
 function ground(){R(0,150,320,2);for(let i=0;i<320;i+=16)R(i+((i*7)%9),156+(i%3)*6,6,1)}
 function cabin(t){
@@ -116,46 +158,165 @@ function table(food,t){
     else R(bx+2,119,16,4,BG);
   });
 }
+const CRACK_MAX=6;
+function drawStump(now){
+  if(stumpGone)return;
+  const oy=-2*Math.max(0,1-(now-hopT)/120); // 맞을 때 살짝 튐
+  R(134,132+oy,24,18);R(138,136+oy,16,2,BG);R(138,142+oy,16,2,BG);R(134,130+oy,24,3);
+  const n=Math.floor(idx/30*CRACK_MAX); // 진행도에 따라 늘어나는 균열
+  for(let k=0;k<n;k++){const x=137+k*4;for(let j=0;j<3+(k%3)*2;j++)R(x+(j%2),131+oy+j*3,1,3,BG)}
+}
+function outlined(txt,x,y,size,col,align){
+  ctx.font='bold '+size+'px DotGothic16, sans-serif';ctx.textAlign=align||'center';ctx.lineJoin='round';
+  ctx.lineWidth=3;ctx.strokeStyle=BG;ctx.strokeText(txt,x,y);ctx.fillStyle=col;ctx.fillText(txt,x,y);
+}
+function drawFx(now){
+  // 타격선
+  const d=now-swingT;
+  if(scene==='play'&&d>=0&&d<110){
+    ctx.save();ctx.globalAlpha=1-d/110;ctx.strokeStyle=K;ctx.lineWidth=1.2;
+    for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(196+i*6,70+i*12);ctx.lineTo(154+i*3,122+i*4);ctx.stroke()}
+    ctx.restore();
+  }
+  // 충격파 링
+  rings=rings.filter(r=>now-r.t0<r.dur);
+  rings.forEach(r=>{const t=(now-r.t0)/r.dur;if(t<0)return;ctx.save();ctx.globalAlpha=1-t;ctx.strokeStyle=K;ctx.lineWidth=2*(1-t)+.5;
+    ctx.beginPath();ctx.arc(r.x,r.y,2+r.max*t,0,Math.PI*2);ctx.stroke();ctx.restore()});
+  // 파티클
+  parts.forEach(p=>{
+    ctx.save();ctx.translate(p.x,p.y);
+    if(p.type==='dust'){ctx.globalAlpha=Math.max(0,p.l/p.l0)*.5;ctx.fillStyle='#777';ctx.beginPath();ctx.arc(0,0,2+(1-p.l/p.l0)*4,0,Math.PI*2);ctx.fill()}
+    else if(p.type==='heart'){ctx.globalAlpha=Math.min(1,p.l/20);ctx.font='10px sans-serif';ctx.textAlign='center';ctx.fillStyle='#e44';ctx.fillText('♥',0,0)}
+    else if(p.type==='sweat'){ctx.fillStyle='#4aa8d8';ctx.fillRect(0,0,2,3)}
+    else if(p.type==='half'){ctx.rotate(p.rot);ctx.fillStyle=K;ctx.fillRect(-6,-10,12,20);ctx.fillStyle=BG;ctx.fillRect(-3,-5,6,2)}
+    else{ctx.rotate(p.rot);ctx.fillStyle=K;ctx.fillRect(-p.sz/2,-p.sz/2,p.sz,p.sz*.6)}
+    ctx.restore();
+  });
+  // 의성어/팝업
+  pops=pops.filter(q=>now-q.t0<q.dur);
+  pops.forEach(q=>{const t=Math.max(0,(now-q.t0)/q.dur);ctx.save();ctx.globalAlpha=t<.7?1:1-(t-.7)/.3;
+    const sc=t<.15?.6+t/.15*.6:1.2-Math.min(.2,(t-.15)*.4); // 튀어나왔다가 안정
+    ctx.translate(q.x,q.y-t*18);ctx.scale(sc,sc);outlined(q.txt,0,0,q.size,q.col);ctx.restore()});
+  // 콤보
+  if(scene==='play'&&combo>=2){
+    const tier=Math.min(3,Math.floor(combo/5)),bump=Math.max(0,1-(now-bumpT)/250);
+    const col=['#111','#111','#c98a00','#d22'][tier];
+    outlined(combo+' 콤보',8,46,12+tier*3+bump*6,col,'left');
+  }
+}
 function draw(now){
-  ctx.save();
-  if(now-shakeT<150)ctx.translate((Math.random()-.5)*4,0);
-  ctx.fillStyle=BG;ctx.fillRect(0,0,320,180);
+  ctx.save();ctx.scale(S,S);ctx.imageSmoothingQuality='high';ctx.translate(0,-26); // 위아래 빈 공간을 잘라 세로를 줄임
+  const st=now-shakeT;
+  if(st<shakeDur){const a=shakeAmp*(1-st/shakeDur);ctx.translate((Math.random()-.5)*2*a,(Math.random()-.5)*a*.6)}
+  const pz=punchAmp*Math.pow(Math.max(0,1-(now-punchT)/180),2); // 줌 펀치
+  if(pz>0){ctx.translate(160,96);ctx.scale(1+pz,1+pz);ctx.translate(-160,-96)}
+  ctx.fillStyle=BG;ctx.fillRect(-10,0,340,180);
   if(scene==='intro'){
     pine(30,114);pine(290,114);cabin(now);ground();
     const bob=Math.floor(now/400)%2;
-    girl(100,128-(lineNo===0?bob*2:0),'norm');
-    man(240,119-(lineNo===1?bob*2:0),null,lineNo===1?'happy':'norm');
+    wife(100,150-(lineNo===0?bob*2:0));
+    man(240,150-(lineNo===1?bob*2:0),now,false);
   }else if(scene==='play'){
     pine(25,114);pine(60,118);pine(295,114);ground();
-    const f=(now-swingT<110)?1:0;
-    man(162,119,f,'norm');
-    R(198,132,24,18);R(202,136,16,2,BG);R(202,142,16,2,BG);R(198,130,24,3);
-    girl(108,128,'norm');
+    drawStump(now);
+    // 아내 리액션: 콤보 점프 / 움찔 / 시간 임박 시 불안한 떨림
+    const jt=(now-wifeJumpT)/280,jump=jt>=0&&jt<1?-6*Math.sin(Math.PI*jt):0;
+    const flinch=-2*Math.max(0,1-(now-wifeFlinchT)/200);
+    const shiver=leftNow<=5?Math.sin(now/45)*1.2:0;
+    wife(70+flinch+shiver,150+jump);
+    man(168,150,now,true);
     const n=Math.min(10,Math.floor(idx/3));
     for(let k=0;k<n;k++){const bx=245+(k%5)*10,by=143-Math.floor(k/5)*8;R(bx,by,9,7);R(bx+3,by+2,3,3,BG)}
-    parts.forEach(p=>R(p.x,p.y,3,3));
+    drawFx(now);
   }else if(scene==='win'){
     pine(25,114);pine(295,114);ground();table(true,now);
-    man(65,119,null,'happy');girl(245,128,'happy');
+    man(65,150,now,false);
+    wife(245,150-Math.abs(Math.sin(now/130))*8); // 연속 점프
+    drawFx(now);
   }else if(scene==='lose'){
     pine(25,114);pine(295,114);ground();table(false,now);
-    man(65,122,null,'sad');girl(245,131,'sad');
-    ctx.fillStyle=K;ctx.font='bold 14px DotGothic16, sans-serif';
+    man(65,150,now,false);wife(245+2,152,{rot:.1}); // 아래로 처짐
+    ctx.fillStyle=K;ctx.font='bold 14px DotGothic16, sans-serif';ctx.textAlign='left';
     ctx.fillText('꼬르륵...',130+Math.sin(now/120)*3,100);
   }
+  const fl=1-(now-flashT)/70; // 타격 플래시
+  if(fl>0&&scene==='play'){ctx.fillStyle='rgba(255,255,255,'+(.3*fl)+')';ctx.fillRect(-10,20,340,160)}
   ctx.restore();
 }
-function update(now){
-  if(scene!=='play')return;
-  parts=parts.filter(p=>p.l>0);
-  parts.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.25;p.l--});
-  updateTimer(now);
+
+/* 타격 처리: 화면에 after-cut이 보이는 시점(swingT)에 맞춰 이펙트를 발생 */
+function spawn(p){parts.push(p);if(parts.length>MAXP)parts.shift()}
+function impact(h,now){
+  const tier=Math.min(3,Math.floor(h.combo/5)),fin=h.final;
+  const n=fin?24:Math.min(14,8+tier*2);
+  for(let i=0;i<n;i++)spawn({type:'chip',x:IMPACT.x+(Math.random()-.5)*8,y:IMPACT.y,vx:(Math.random()-.5)*5+.8,vy:-(2+Math.random()*3.2),
+    sz:2+Math.random()*2.5,rot:Math.random()*6,vr:(Math.random()-.5)*.6,l:40+Math.random()*20});
+  for(let i=0;i<4;i++){ // 먼지: 나무토막 밑 + 남편 발밑
+    const x=i<2?IMPACT.x+(Math.random()-.5)*14:172+(Math.random()-.5)*10;
+    spawn({type:'dust',x,y:149,vx:(Math.random()-.5)*1.4,vy:-.25,l:22,l0:22});
+  }
+  rings.push({x:IMPACT.x,y:136,t0:now,dur:300,max:14+tier*3});
+  if(tier>=2)rings.push({x:IMPACT.x,y:136,t0:now+60,dur:300,max:24});
+  const txt=fin?'쩌억!!':['퍽!','쾅!','콰직!'][Math.floor(Math.random()*3)];
+  pops.push({txt,x:IMPACT.x+(Math.random()-.5)*20,y:118,t0:now,dur:fin?900:500,size:fin?24:12+tier*3,col:tier>=2||fin?'#d22':K});
+  flashT=now;hopT=now;
+  shakeT=now;shakeAmp=fin?6:1.5+tier*.5;shakeDur=fin?450:150;
+  punchT=now;punchAmp=fin?.08:.03+tier*.005;
+  hsDur=fin?120:50;hitStopUntil=now+hsDur;
+  if(h.combo>=3)wifeJumpT=now;
+  if(h.combo%5===0&&!fin){bumpT=now;sfxCombo(h.combo/5);pops.push({txt:h.combo+' 콤보!',x:160,y:70,t0:now,dur:700,size:18,col:'#c98a00'})}
+  if(fin){ // 마지막 한 방: 나무가 둘로 쪼개지며 슬로모션
+    stumpGone=true;slowUntil=now+800;
+    [-1,1].forEach(sg=>spawn({type:'half',x:IMPACT.x+sg*6,y:140,vx:sg*1.6,vy:-3,rot:0,vr:sg*.07,l:90}));
+    sfxFinal();
+  }else sfxHit(tier);
 }
-function loop(now){update(now);draw(now);requestAnimationFrame(loop)}
+function update(now){
+  const dt=Math.min(3,(now-lastU)/16.67||1);lastU=now;
+  pend=pend.filter(h=>{if(now>=h.t){impact(h,now);return false}return true});
+  const ts=now<hitStopUntil?0:(now<slowUntil?.25:1),step=dt*ts; // 히트스톱/슬로모션
+  parts=parts.filter(p=>p.l>0);
+  parts.forEach(p=>{
+    p.x+=p.vx*step;p.y+=p.vy*step;p.vy+=(p.type==='dust'||p.type==='heart')?0:(p.type==='sweat'?.12:.25)*step;
+    if(p.rot!=null)p.rot+=(p.vr||0)*step;p.l-=step;
+  });
+  if(scene==='play'){
+    if(leftNow<=5&&!ending&&now-lastSweat>180){lastSweat=now; // 시간 임박: 땀
+      spawn({type:'sweat',x:164+(Math.random()-.5)*12,y:68,vx:(Math.random()-.5)*.6,vy:-.4,l:30})}
+    if(ending){if(now>=finalAt)finish(true)}else updateTimer(now);
+  }else if(scene==='win'&&now-lastHeart>200){lastHeart=now;
+    spawn({type:'heart',x:245+(Math.random()-.5)*24,y:80,vx:(Math.random()-.5)*.5,vy:-.7,l:60})}
+}
+function loop(){const now=performance.now();update(now);draw(now);requestAnimationFrame(loop)} // rAF 인자 대신 performance.now()로 시각 기준 통일
 requestAnimationFrame(loop);
 
+/* 사운드 (Web Audio 합성음, 외부 파일 없음) */
+let AC=null,muted=localStorage.getItem('mute')==='1';
+function audio(){try{if(!AC)AC=new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume()}catch(e){AC=null}return AC}
+function tone(f0,f1,dur,type,vol,delay){
+  if(muted||!audio())return;const t=AC.currentTime+(delay||0),o=AC.createOscillator(),g=AC.createGain();
+  o.type=type;o.frequency.setValueAtTime(f0,t);o.frequency.exponentialRampToValueAtTime(f1,t+dur);
+  g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);
+  o.connect(g).connect(AC.destination);o.start(t);o.stop(t+dur);
+}
+function noise(dur,vol,cut,delay){
+  if(muted||!audio())return;const t=AC.currentTime+(delay||0),n=Math.floor(AC.sampleRate*dur),buf=AC.createBuffer(1,n,AC.sampleRate),d=buf.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=Math.random()*2-1;
+  const s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();
+  s.buffer=buf;f.type='lowpass';f.frequency.value=cut;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);
+  s.connect(f).connect(g).connect(AC.destination);s.start(t);
+}
+function sfxHit(tier){noise(.09,.5,1800+tier*400);tone(150+tier*25,50,.12,'sine',.6)}
+function sfxWrong(){tone(110,80,.22,'sawtooth',.22);tone(100,70,.22,'square',.12)}
+function sfxCombo(step){const b=440*Math.pow(2,step/6);[1,1.25,1.5].forEach((m,i)=>tone(b*m,b*m,.09,'square',.1,i*.07))}
+function sfxFinal(){noise(.4,.7,900);noise(.12,.5,4000,.02);tone(90,35,.45,'sine',.8)}
+function sfxWin(){[523,659,784,1047].forEach((f,i)=>tone(f,f,.18,'triangle',.25,i*.12))}
+function sfxLose(){[392,349,311,262].forEach((f,i)=>tone(f,f*.97,.25,'sawtooth',.12,i*.2))}
+(function(){const b=$('mute');const sync=()=>b.textContent=muted?'🔇':'🔊';sync();
+  b.onclick=()=>{muted=!muted;localStorage.setItem('mute',muted?'1':'0');sync();b.blur();if(!muted){audio();sfxHit(0)}}})();
+
 /* 인트로 */
-const LINES=[['딸','아빠 우리 오늘도 굶는 거야?'],['아빠','오늘은 아빠가 꼭 나무를 잘 패서 맛있는 밥 사줄게']];
+const LINES=[['아내','여보 우리 오늘도 굶는 거야?'],['남편','오늘은 내가 꼭 나무를 잘 패서 맛있는 밥 사줄게']];
 function showLine(){
   $('who').textContent=LINES[lineNo][0];$('line').textContent='"'+LINES[lineNo][1]+'"';
   const last=lineNo===1;
@@ -171,10 +332,13 @@ $('again').onclick=()=>{scene='intro';lineNo=1;showLine();$('end').classList.add
 
 /* 게임 */
 function startGame(){
-  seq=Array.from({length:30},()=>Math.floor(Math.random()*4));idx=0;parts=[];
+  audio();
+  seq=Array.from({length:30},()=>Math.floor(Math.random()*2));idx=0;
+  parts=[];rings=[];pops=[];pend=[];combo=0;maxCombo=0;ending=false;stumpGone=false;
+  swingT=wrongT=-999;hitStopUntil=slowUntil=0;leftNow=99;
   limit=TIMES[level-1];startT=performance.now();scene='play';
   $('intro').classList.add('hide');$('end').classList.add('hide');$('play').classList.remove('hide');
-  $('lvt').textContent='난이도 '+level;
+  $('lvt').textContent='난이도 '+level;$('bar').classList.remove('low');$('tt').classList.remove('low');
   const g=$('grid');g.innerHTML='';
   seq.forEach(k=>{const d=document.createElement('div');d.className='c';d.textContent=ARR[k];g.appendChild(d)});
   render();
@@ -184,29 +348,39 @@ function render(){
   $('pg').textContent=idx+' / 30';
 }
 function updateTimer(now){
-  const left=Math.min(limit,Math.max(0,limit-(now-startT)/1000));
+  const left=Math.min(limit,Math.max(0,limit-(now-startT)/1000));leftNow=left;
   $('fill').style.width=(left/limit*100)+'%';$('tt').textContent=left.toFixed(1)+'초';
+  $('bar').classList.toggle('low',left<=5);$('tt').classList.toggle('low',left<=5); // 시간 임박 경고
   if(left<=0)finish(false);
 }
 function press(k){
-  if(scene!=='play')return;
+  if(scene!=='play'||ending)return;
+  audio();
+  const now=performance.now();
   if(k===seq[idx]){
-    idx++;swingT=performance.now();
-    for(let i=0;i<4;i++)parts.push({x:198,y:132,vx:Math.random()*3-.5,vy:-Math.random()*3-1,l:25});
-    if(idx>=30){render();finish(true)}else render();
+    idx++;combo++;maxCombo=Math.max(maxCombo,combo);
+    swingT=(now<swingT+300)?now+60:now; // 연타 중이면 after-cut 전에 before-cut을 60ms 먼저 보여줌
+    const fin=idx>=30;
+    pend=[{t:swingT,combo,final:fin}]; // 보이지 않게 덮인 이전 타격 이펙트는 버림
+    if(fin){ending=true;finalAt=swingT+900}
+    render();
   }else{
-    shakeT=performance.now();startT-=1000;const c=$('grid').children[idx];c.classList.add('bad');
+    combo=0;shakeT=wrongT=wifeFlinchT=now;shakeAmp=4;shakeDur=150;startT-=1000;
+    pops.push({txt:'아차!',x:168,y:58,t0:now,dur:600,size:14,col:'#d22'});
+    sfxWrong();
+    const c=$('grid').children[idx];c.classList.remove('bad');void c.offsetWidth;c.classList.add('bad'); // 번쩍 애니메이션 재시작
   }
 }
 function finish(ok){
   if(scene!=='play')return;
-  scene=ok?'win':'lose';
+  scene=ok?'win':'lose';parts=[];pops=[];rings=[]; // 플레이 중 이펙트 정리
   $('play').classList.add('hide');$('end').classList.remove('hide');
-  $('endwho').textContent='딸';
-  $('endtxt').textContent=ok?'"와! 아빠 최고! 같이 맛있게 먹자!" 🍚 두 사람은 따뜻한 밥을 맛있게 먹었습니다.'
-    :'"아빠... 괜찮아. 내일은 꼭 할 수 있을 거야." 시간이 부족했다... 오늘도 두 사람은 굶었습니다.';
+  $('endwho').textContent='아내';
+  $('endtxt').textContent=(ok?'"와! 여보 최고! 같이 맛있게 먹자!" 🍚 두 사람은 따뜻한 밥을 맛있게 먹었습니다.'
+    :'"여보... 괜찮아. 내일은 꼭 할 수 있을 거야." 시간이 부족했다... 오늘도 두 사람은 굶었습니다.')+' (최대 콤보 '+maxCombo+')';
+  ok?sfxWin():sfxLose();
 }
-const KM={ArrowLeft:0,ArrowUp:1,ArrowRight:2,ArrowDown:3};
+const KM={ArrowLeft:0,ArrowRight:1};
 addEventListener('keydown',e=>{if(e.key in KM){e.preventDefault();if(!e.repeat)press(KM[e.key])}});
 document.querySelectorAll('.pad button').forEach(b=>b.addEventListener('pointerdown',e=>{e.preventDefault();press(+b.dataset.k)}));
 let hiddenAt=0;
