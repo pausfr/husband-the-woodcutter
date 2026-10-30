@@ -82,9 +82,11 @@ let scene='intro', level=1, seq=[], idx=0, startT=0, limit=30, lineNo=0, leftNow
 // 연출 상태 (시각은 모두 performance.now() 기준)
 let swingT=-999, wrongT=-999, hitStopUntil=0, hsDur=50, slowUntil=0, lastU=0;
 let shakeT=-999, shakeAmp=0, shakeDur=150, punchT=-999, punchAmp=0, flashT=-999, hopT=-999;
+let counting=false, countStart=0, lastCount=0;
 let combo=0, maxCombo=0, bumpT=-999, ending=false, finalAt=0, stumpGone=false;
 let parts=[], rings=[], pops=[], pend=[];
 let wifeJumpT=-999, wifeFlinchT=-999, lastSweat=0, lastHeart=0;
+const COUNT_MS=800;
 const IMPACT={x:146,y:132}, MAXP=60;
 
 function R(x,y,w,h,c){ctx.fillStyle=c||K;ctx.fillRect(Math.round(x),Math.round(y),w,h)}
@@ -239,6 +241,11 @@ function draw(now){
     ctx.fillStyle=K;ctx.font='bold 14px DotGothic16, sans-serif';ctx.textAlign='left';
     ctx.fillText('꼬르륵...',130+Math.sin(now/120)*3,100);
   }
+  if(scene==='play'&&counting){ // 3, 2, 1
+    const el=now-countStart,n=3-Math.floor(el/COUNT_MS),t=(el%COUNT_MS)/COUNT_MS;
+    if(n>=1){ctx.save();ctx.globalAlpha=t<.8?1:1-(t-.8)/.2;ctx.translate(160,100);const sc=1.5-.5*Math.min(1,t*4);ctx.scale(sc,sc);
+      outlined(String(n),0,22,64,'#d22');ctx.restore()}
+  }
   const fl=1-(now-flashT)/70; // 타격 플래시
   if(fl>0&&scene==='play'){ctx.fillStyle='rgba(255,255,255,'+(.3*fl)+')';ctx.fillRect(-10,20,340,160)}
   ctx.restore();
@@ -283,7 +290,10 @@ function update(now){
   if(scene==='play'){
     if(leftNow<=5&&!ending&&now-lastSweat>180){lastSweat=now; // 시간 임박: 땀
       spawn({type:'sweat',x:164+(Math.random()-.5)*12,y:68,vx:(Math.random()-.5)*.6,vy:-.4,l:30})}
-    if(ending){if(now>=finalAt)finish(true)}else updateTimer(now);
+    if(counting){
+      const n=3-Math.floor((now-countStart)/COUNT_MS);
+      if(n<1){counting=false;startT=now;sfxGo()}else if(n!==lastCount){lastCount=n;sfxCount()}
+    }else if(ending){if(now>=finalAt)finish(true)}else updateTimer(now);
   }else if(scene==='win'&&now-lastHeart>200){lastHeart=now;
     spawn({type:'heart',x:245+(Math.random()-.5)*24,y:80,vx:(Math.random()-.5)*.5,vy:-.7,l:60})}
 }
@@ -310,6 +320,8 @@ function sfxHit(tier){noise(.09,.5,1800+tier*400);tone(150+tier*25,50,.12,'sine'
 function sfxWrong(){tone(110,80,.22,'sawtooth',.22);tone(100,70,.22,'square',.12)}
 function sfxCombo(step){const b=440*Math.pow(2,step/6);[1,1.25,1.5].forEach((m,i)=>tone(b*m,b*m,.09,'square',.1,i*.07))}
 function sfxFinal(){noise(.4,.7,900);noise(.12,.5,4000,.02);tone(90,35,.45,'sine',.8)}
+function sfxCount(){tone(440,440,.12,'square',.12)}
+function sfxGo(){tone(880,880,.25,'square',.14)}
 function sfxWin(){[523,659,784,1047].forEach((f,i)=>tone(f,f,.18,'triangle',.25,i*.12))}
 function sfxLose(){[392,349,311,262].forEach((f,i)=>tone(f,f*.97,.25,'sawtooth',.12,i*.2))}
 (function(){const b=$('mute');const sync=()=>b.textContent=muted?'🔇':'🔊';sync();
@@ -336,9 +348,9 @@ function startGame(){
   seq=Array.from({length:30},()=>Math.floor(Math.random()*2));idx=0;
   parts=[];rings=[];pops=[];pend=[];combo=0;maxCombo=0;ending=false;stumpGone=false;
   swingT=wrongT=-999;hitStopUntil=slowUntil=0;leftNow=99;
-  limit=TIMES[level-1];startT=performance.now();scene='play';
+  limit=TIMES[level-1];scene='play';counting=true;countStart=performance.now();lastCount=4;startT=countStart+COUNT_MS*3; // 3,2,1 카운트다운 후 시작
   $('intro').classList.add('hide');$('end').classList.add('hide');$('play').classList.remove('hide');
-  $('lvt').textContent='난이도 '+level;$('bar').classList.remove('low');$('tt').classList.remove('low');
+  $('lvt').textContent='난이도 '+level;$('fill').style.width='100%';$('tt').textContent=limit.toFixed(1)+'초';$('bar').classList.remove('low');$('tt').classList.remove('low');
   const g=$('grid');g.innerHTML='';
   seq.forEach(k=>{const d=document.createElement('div');d.className='c';d.textContent=ARR[k];g.appendChild(d)});
   render();
@@ -354,7 +366,7 @@ function updateTimer(now){
   if(left<=0)finish(false);
 }
 function press(k){
-  if(scene!=='play'||ending)return;
+  if(scene!=='play'||ending||counting)return;
   audio();
   const now=performance.now();
   if(k===seq[idx]){
@@ -386,7 +398,7 @@ document.querySelectorAll('.pad button').forEach(b=>b.addEventListener('pointerd
 let hiddenAt=0;
 document.addEventListener('visibilitychange',()=>{ // 탭을 벗어난 시간은 타이머에서 제외
   if(document.hidden)hiddenAt=performance.now();
-  else if(hiddenAt){startT+=performance.now()-hiddenAt;hiddenAt=0}
+  else if(hiddenAt){const dh=performance.now()-hiddenAt;startT+=dh;countStart+=dh;hiddenAt=0}
 });
 showLine();
 </script>
